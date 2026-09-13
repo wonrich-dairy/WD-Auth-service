@@ -48,6 +48,7 @@ public static class AuthDbSeeder
         ("analyst", "Quality Analyst", WonrichRoles.QualityAnalyst),
         ("factory", "Factory Intake Officer", WonrichRoles.FactoryIntakeOfficer),
         ("production", "Production Manager", WonrichRoles.ProductionManager),
+        ("processing", "Processing Technician", WonrichRoles.ProcessingTechnician),
     ];
 
     /// <summary>

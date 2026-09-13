@@ -29,6 +29,8 @@ public static class WonrichRoles
     /// <summary>Oversees processing and traces batches back to their sources.</summary>
     public const string ProductionManager = "ProductionManager";
 
+    public const string ProcessingTechnician = "ProcessingTechnician";
+
     /// <summary>Every configured role, for validation and for the user management role picker.</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -37,7 +39,8 @@ public static class WonrichRoles
         IntakeOfficer,
         QualityAnalyst,
         FactoryIntakeOfficer,
-        ProductionManager
+        ProductionManager,
+        ProcessingTechnician
     ];
 
     /// <summary>Whether the supplied name is one of the configured roles.</summary>
