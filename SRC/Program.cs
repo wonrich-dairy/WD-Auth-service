@@ -17,7 +17,7 @@ builder.Services.AddControllers();
 
 // Persistence. The auth service keeps its own database: user credentials must not sit in a
 // schema that every other service's connection string can already reach.
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = builder.Configuration["ConnectionString:DefaultConnection"];//.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
