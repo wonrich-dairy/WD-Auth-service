@@ -1,17 +1,12 @@
-# The auth service (SCRUM-34): issues the tokens every other Wonrich service validates.
-#
-# The project lives in SRC/ and its assembly is named SRC, so the published entry point is SRC.dll
-# rather than a name matching the service.
-
 # ── Build stage ──
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# csproj first, so the restore layer is cached against the dependency list alone and a source-only
-# change does not re-run restore. This project has no ProjectReferences, so it is the only one.
+# Restore against the csproj alone so the restore layer is cached until dependencies change.
 COPY SRC/SRC.csproj SRC/
 RUN dotnet restore SRC/SRC.csproj
 
+# Copy everything else and publish
 COPY SRC/ SRC/
 RUN dotnet publish SRC/SRC.csproj -c Release -o /app/publish --no-restore
 

@@ -1,12 +1,5 @@
-# Keeping build output and local settings out of the context: bin/ and obj/ built on the host carry
-# the host's absolute paths and target framework, and copying them in can shadow the container's
-# own restore.
-**/bin
-**/obj
-.git
-.github
-.vscode
-**/appsettings.Development.json
-**/appsettings.*.local.json
-*.user
-*.log
+SRC/bin/
+SRC/obj/
+.git/
+.github/
+.vscode/
