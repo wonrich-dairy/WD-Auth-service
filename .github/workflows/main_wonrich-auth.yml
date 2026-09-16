@@ -1,7 +1,8 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# Builds the auth service container, pushes it to ACR, and points the Azure Web App at the new image.
+# Auth to Azure is OIDC (federated credential on the github-wonrich-auth-deploy app registration),
+# so no long-lived secret is stored in GitHub.
 
-name: Build and deploy ASP.Net Core app to Azure Web App - wonrich-auth
+name: Build and deploy auth service container to Azure Web App - wonrich-auth-app
 
 on:
   push:
@@ -9,57 +10,47 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  ACR_NAME: wonrichauthcontainer
+  IMAGE_NAME: wonrich-auth
+  WEBAPP_NAME: wonrich-auth-app
+  RESOURCE_GROUP: wonrich-auth-app_group
+
 jobs:
-  build:
-    runs-on: windows-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up .NET Core
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.x'
-
-      - name: Build with dotnet
-        run: dotnet build SRC/SRC.csproj --configuration Release
-
-      - name: dotnet publish
-        run: dotnet publish SRC/SRC.csproj -c Release -o "${{ github.workspace }}/publish"
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: .net-app
-          path: ${{ github.workspace }}/publish
-
-  deploy:
-    runs-on: windows-latest
-    needs: build
+  build-and-deploy:
+    runs-on: ubuntu-latest
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: .net-app
-      
+      - uses: actions/checkout@v4
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C8791510E3B0462282F2607F38724176 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_84824E1EB383441B8589A74593E465FF }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_529832775FA84F659661D94A94D20067 }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'wonrich-auth'
-          slot-name: 'Production'
-          package: .
-          
+      - name: Login to ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build and push image
+        run: |
+          IMAGE="$ACR_NAME.azurecr.io/$IMAGE_NAME"
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      # Deploys the immutable sha tag (not :latest) so the running image is always traceable to a commit.
+      - name: Point web app at new image
+        run: |
+          az webapp sitecontainers update \
+            --name "$WEBAPP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --container-name main \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}"
+
+      - name: Restart web app
+        run: az webapp restart --name "$WEBAPP_NAME" --resource-group "$RESOURCE_GROUP"
