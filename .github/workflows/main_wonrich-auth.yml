@@ -1,7 +1,20 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# Build the auth service container and roll it out to the App Service (SCRUM-106).
+#
+# wonrich-auth-app is a container app: it runs an image from wonrichauthcontainer.azurecr.io as
+# its main site container. So deployment is image build -> push to ACR -> point the site container
+# at the new tag. The zip-deploy workflow this replaces could never work here: it published an
+# empty solution file, targeted an app that does not exist, and zip deploy does not apply to a
+# container app anyway.
+#
+# Every image is tagged with the commit it was built from, so a rollback is
+# `az webapp sitecontainers update ... --image <registry>/wonrich-auth:<old sha>`.
+#
+# Secrets:
+#   ACR_USERNAME / ACR_PASSWORD  admin credentials of the registry
+#                                (az acr credential show -n wonrichauthcontainer)
+#   AZUREAPPSERVICE_*            OIDC identity used by azure/login to update the site container
 
-name: Build and deploy ASP.Net Core app to Azure Web App - wonrich-auth
+name: Build and deploy auth service container - wonrich-auth-app
 
 on:
   push:
@@ -9,45 +22,49 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  REGISTRY: wonrichauthcontainer.azurecr.io
+  IMAGE: wonrich-auth
+  APP_NAME: wonrich-auth-app
+  RESOURCE_GROUP: wonrich-auth-app_group
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET Core
-        uses: actions/setup-dotnet@v4
+      # The build is done in the Dockerfile, so it is the same image a developer builds locally.
+      - name: Build image
+        run: |
+          docker build \
+            --tag "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --tag "$REGISTRY/$IMAGE:latest" \
+            .
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
         with:
-          dotnet-version: '10.x'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build with dotnet
-        run: dotnet build --configuration Release
-
-      - name: dotnet publish
-        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: .net-app
-          path: ${{env.DOTNET_ROOT}}/myapp
+      - name: Push image
+        run: |
+          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE:latest"
 
   deploy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: .net-app
-      
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -55,11 +72,25 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_84824E1EB383441B8589A74593E465FF }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_529832775FA84F659661D94A94D20067 }}
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'wonrich-auth'
-          slot-name: 'Production'
-          package: .
-          
+      # Pointing the site container at the new tag is what restarts the app on the new build.
+      - name: Update site container
+        run: |
+          az webapp sitecontainers update \
+            --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --container-name main \
+            --image "$REGISTRY/$IMAGE:${{ github.sha }}" \
+            --output none
+
+      # A login attempt with bad credentials must come back 401: the app is up, talking to its
+      # database, and rejecting rather than erroring. Cold start on the first request is normal.
+      - name: Smoke test
+        run: |
+          url="https://$(az webapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostName -o tsv)/api/auth/login"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+              -H 'Content-Type: application/json' \
+              -d '{"userName":"smoke-test","password":"not-a-real-password"}' "$url" || true)
+            if [ "$code" = "401" ]; then echo "auth service responding ($code)"; exit 0; fi
+            echo "attempt $i: $code"; sleep 10
+          done
+          echo "auth service did not come up" >&2; exit 1
