@@ -1,7 +1,7 @@
 namespace SRC.Authorization;
 
 /// <summary>
-/// The six roles configured across the Wonrich Dairy services (SCRUM-34). A user holds exactly
+/// The eight roles configured across the Wonrich Dairy services (SCRUM-34). A user holds exactly
 /// one of these at a time, assigned through user management (SCRUM-45).
 /// </summary>
 /// <remarks>
@@ -29,7 +29,11 @@ public static class WonrichRoles
     /// <summary>Oversees processing and traces batches back to their sources.</summary>
     public const string ProductionManager = "ProductionManager";
 
+    /// <summary>Works the factory floor: records tanker unloads, allocates tanks, and logs processing runs and tank temperatures.</summary>
     public const string ProcessingTechnician = "ProcessingTechnician";
+
+    /// <summary>Carries out quality control checks on product during and after processing.</summary>
+    public const string QualityControlOfficer = "QualityControlOfficer";
 
     /// <summary>Every configured role, for validation and for the user management role picker.</summary>
     public static readonly IReadOnlyList<string> All =
@@ -40,7 +44,8 @@ public static class WonrichRoles
         QualityAnalyst,
         FactoryIntakeOfficer,
         ProductionManager,
-        ProcessingTechnician
+        ProcessingTechnician,
+        QualityControlOfficer
     ];
 
     /// <summary>Whether the supplied name is one of the configured roles.</summary>
